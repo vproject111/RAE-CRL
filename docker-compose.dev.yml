@@ -1,0 +1,51 @@
+services:
+  rae-crl-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: rae-crl:dev
+    container_name: rae-crl-api-dev
+    ports:
+      - "8020:8000"
+    volumes:
+      - .:/app
+    environment:
+      - RAE_CORE_URL=http://host.docker.internal:8001
+      - DATABASE_URL=postgresql+asyncpg://crl_user:crl_pass@crl-db:5432/rae_crl
+      - LOG_LEVEL=DEBUG
+      - RELOAD=true
+    depends_on:
+      - crl-db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  rae-crl-ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: rae-crl:dev
+    container_name: rae-crl-ui-dev
+    ports:
+      - "8503:8080"
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://crl_user:crl_pass@crl-db:5432/rae_crl
+    depends_on:
+      - crl-db
+    command: python3 apps/crl/ui/main.py
+
+  crl-db:
+    image: postgres:16-alpine
+    container_name: rae-crl-db-dev
+    ports:
+      - "5440:5432"
+    environment:
+      - POSTGRES_USER=crl_user
+      - POSTGRES_PASSWORD=crl_pass
+      - POSTGRES_DB=rae_crl
+    volumes:
+      - crl_db_data:/var/lib/postgresql/data
+
+volumes:
+  crl_db_data:

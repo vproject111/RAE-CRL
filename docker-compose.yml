@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  rae-crl-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: rae-crl:latest
+    container_name: rae-crl-api
+    ports:
+      - "8000:8000"
+    environment:
+      - RAE_CORE_URL=http://host.docker.internal:8000  # Default assumption
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
