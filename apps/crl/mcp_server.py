@@ -6,8 +6,14 @@ from apps.crl.core.models import BaseArtifact, ArtifactType, ArtifactStatus, Art
 from apps.crl.services.storage.sql import SQLRepository
 from apps.crl.core.database import get_session
 
+import asyncio
+from apps.crl.services.sync_service import SyncEngine
+
 # Initialize MCP Server
 mcp = FastMCP("RAE-CRL-Research-Loop")
+
+# Start Sync Engine in Background (moved to main to avoid test import side-effects)
+# @mcp.on_startup - removed due to API mismatch
 
 # Helper to run database operations
 async def with_repo(func):
@@ -85,6 +91,67 @@ async def record_failure(experiment_id: UUID, reason: str) -> str:
     return await with_repo(_action)
 
 @mcp.tool()
+async def fork_artifact(original_id: UUID, new_author: str, reason: str) -> str:
+    """
+    [EPISTEMIC FORK] Creates an alternative interpretation (Fork) of an artifact.
+    Use when you disagree with a hypothesis or conclusion.
+    """
+    async def _action(repo: SQLRepository):
+        original = await repo.get(original_id)
+        if not original: return "❌ Original artifact not found."
+        
+        # Clone logic
+        from apps.crl.core.models import BaseArtifact, ArtifactType
+        fork = BaseArtifact(
+            type=original.type,
+            title=f"Fork of: {original.title}",
+            description=f"Fork Reason: {reason}\n\nOriginal Content: {original.description}",
+            project_id=original.project_id,
+            author=new_author,
+            status=ArtifactStatus.DRAFT,
+            visibility=ArtifactVisibility.TEAM, # Forks are usually for discussion
+            metadata_blob={"forked_from": str(original.id), "reason": reason}
+        )
+        
+        saved_fork = await repo.save(fork)
+        await repo.link_artifacts(original.id, saved_fork.id, "has_alternative_interpretation")
+        
+        return f"✅ Fork created ({saved_fork.id}). Let the debate begin!"
+
+    return await with_repo(_action)
+
+@mcp.tool()
+async def request_approval(artifact_id: UUID, approver_name: str) -> str:
+    """[RESPONSIBILITY] Submits an artifact for formal approval (e.g., by PI)."""
+    async def _action(repo: SQLRepository):
+        art = await repo.get(artifact_id)
+        if not art: return "❌ Artifact not found."
+        
+        art.proposed_by = art.author
+        art.metadata_blob["approver_target"] = approver_name
+        # Status could change to PENDING if we had it, for now keep ACTIVE but marked
+        await repo.save(art)
+        return f"✅ Submitted {artifact_id} for approval by {approver_name}."
+
+    return await with_repo(_action)
+
+@mcp.tool()
+async def approve_artifact(artifact_id: UUID, approver_name: str) -> str:
+    """[RESPONSIBILITY] Formally approves an artifact."""
+    async def _action(repo: SQLRepository):
+        art = await repo.get(artifact_id)
+        if not art: return "❌ Artifact not found."
+        
+        art.approved_by = approver_name
+        art.status = ArtifactStatus.ACTIVE # Ensure it's active
+        art.grace_period_end = None # Approval implies readiness for Sync
+        
+        await repo.save(art)
+        return f"✅ Artifact {artifact_id} APPROVED by {approver_name}."
+
+    return await with_repo(_action)
+
+@mcp.tool()
 async def list_my_traces(project_id: str) -> str:
     """Shows active traces / drafts to remind you what needs refinement."""
     async def _action(repo: SQLRepository):
@@ -100,4 +167,10 @@ async def list_my_traces(project_id: str) -> str:
     return await with_repo(_action)
 
 if __name__ == "__main__":
+    # Start Sync Engine when running standalone
+    sync = SyncEngine()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(sync.start(interval_seconds=300))
+    
     mcp.run()

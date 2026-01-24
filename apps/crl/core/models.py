@@ -61,6 +61,7 @@ class BaseArtifact(SQLModel, table=True):
     # Audit
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_synced_at: Optional[datetime] = Field(default=None) # Bridge to RAE Core
     provenance_hash: Optional[str] = None
 
     class Config:

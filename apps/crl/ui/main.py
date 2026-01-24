@@ -49,10 +49,22 @@ async def main_page():
         # Placeholder for refine logic dialog
         ui.notify(f'Opening refinement for {artifact_id} (Coming soon)', type='info')
 
+    async def trigger_sync():
+        from apps.crl.services.sync_service import SyncEngine
+        engine = SyncEngine()
+        ui.notify('Sync started...', type='ongoing')
+        try:
+            await engine.run_sync_cycle()
+            ui.notify('Sync complete! 🚀', type='positive')
+        except Exception as e:
+            ui.notify(f'Sync failed: {e}', type='negative')
+
     # --- UI LAYOUT ---
     with ui.header().classes(replace='row items-center') as header:
         ui.icon('science', size='32px').classes('q-mr-sm')
         ui.label('RAE-CRL Lab Desk').classes('text-h6')
+        ui.space()
+        ui.button('Sync Now', icon='sync', on_click=trigger_sync).props('flat dense text-color=white')
 
     with ui.column().classes('w-full q-pa-md items-center'):
         

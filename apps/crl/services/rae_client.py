@@ -4,6 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 from apps.crl.core.models import BaseArtifact
 
+import os
 logger = structlog.get_logger()
 
 class RAEClient:
@@ -11,8 +12,8 @@ class RAEClient:
     Adapter for communicating with RAE-Core.
     Agnostic to RAE deployment mode (Native/Docker).
     """
-    def __init__(self, base_url: str = "http://localhost:8000"):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: Optional[str] = None):
+        self.base_url = (base_url or os.getenv("RAE_CORE_URL", "http://localhost:8000")).rstrip("/")
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=10.0)
 
     async def store_artifact(self, artifact: BaseArtifact) -> bool:
