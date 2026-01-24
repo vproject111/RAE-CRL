@@ -1,14 +1,18 @@
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from uuid import UUID
-from sqlmodel import select
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from apps.crl.core.models import BaseArtifact, ArtifactType, ArtifactRelation
+from sqlmodel import select
+
+from apps.crl.core.models import ArtifactRelation, ArtifactType, BaseArtifact
 from apps.crl.interfaces.storage import ArtifactRepository
+
 
 class SQLRepository(ArtifactRepository):
     """
     Universal SQL Repository working with both PostgreSQL (Docker) and SQLite (Desktop).
     """
+
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -19,18 +23,26 @@ class SQLRepository(ArtifactRepository):
         return artifact
 
     async def get(self, artifact_id: UUID) -> Optional[BaseArtifact]:
-        result = await self.session.execute(select(BaseArtifact).where(BaseArtifact.id == artifact_id))
+        result = await self.session.execute(
+            select(BaseArtifact).where(BaseArtifact.id == artifact_id)
+        )
         return result.scalars().first()
 
-    async def list_by_project(self, project_id: str, type: Optional[ArtifactType] = None) -> List[BaseArtifact]:
+    async def list_by_project(
+        self, project_id: str, type: Optional[ArtifactType] = None
+    ) -> List[BaseArtifact]:
         query = select(BaseArtifact).where(BaseArtifact.project_id == project_id)
         if type:
             query = query.where(BaseArtifact.type == type)
         result = await self.session.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
-    async def link_artifacts(self, source_id: UUID, target_id: UUID, relation: str) -> bool:
-        link = ArtifactRelation(source_id=source_id, target_id=target_id, relation_type=relation)
+    async def link_artifacts(
+        self, source_id: UUID, target_id: UUID, relation: str
+    ) -> bool:
+        link = ArtifactRelation(
+            source_id=source_id, target_id=target_id, relation_type=relation
+        )
         self.session.add(link)
         try:
             await self.session.commit()
@@ -40,7 +52,13 @@ class SQLRepository(ArtifactRepository):
             return False
 
     async def get_graph(self, artifact_id: UUID, depth: int = 1) -> List[BaseArtifact]:
-        stmt = select(BaseArtifact).join(ArtifactRelation, ArtifactRelation.target_id == BaseArtifact.id)\
-               .where(ArtifactRelation.source_id == artifact_id)
+        stmt = (
+            select(BaseArtifact)
+            .join(
+                ArtifactRelation,
+                cast(Any, ArtifactRelation.target_id == BaseArtifact.id),
+            )
+            .where(ArtifactRelation.source_id == artifact_id)
+        )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())

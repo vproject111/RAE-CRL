@@ -1,13 +1,14 @@
 import asyncio
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from alembic import context
 from sqlmodel import SQLModel
-from apps.crl.core.models import BaseArtifact, ArtifactRelation  # Import models to register metadata
+
+from apps.crl.core.models import (  # Import models to register metadata
+    ArtifactRelation, BaseArtifact)
 
 config = context.config
 
@@ -15,6 +16,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = SQLModel.metadata
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
@@ -25,17 +27,20 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
     )
 
+
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
         context.run_migrations()
 
+
 async def run_migrations_online() -> None:
     # Use environment variable if available (Docker friendly)
     import os
+
     db_url = os.getenv("DATABASE_URL")
-    
+
     configuration = config.get_section(config.config_ini_section, {})
     if db_url:
         configuration["sqlalchemy.url"] = db_url
@@ -50,6 +55,7 @@ async def run_migrations_online() -> None:
         await connection.run_sync(do_run_migrations)
 
     await connectable.dispose()
+
 
 if context.is_offline_mode():
     run_migrations_offline()
