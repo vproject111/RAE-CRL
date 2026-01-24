@@ -2,7 +2,7 @@ import typer
 import asyncio
 from rich.console import Console
 from rich.table import Table
-from apps.crl.core.models import BaseArtifact, ArtifactType, ResearchContext
+from apps.crl.core.models import BaseArtifact, ArtifactType
 from apps.crl.services.rae_client import RAEClient
 
 app = typer.Typer(help="RAE-CRL: Cognitive Research Loop CLI")

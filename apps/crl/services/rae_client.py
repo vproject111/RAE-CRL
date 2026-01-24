@@ -25,14 +25,14 @@ class RAEClient:
                 "layer": "semantic",  # Research facts are semantic knowledge
                 "tenant_id": "research-lab", # Default tenant for now
                 "agent_id": artifact.author,
-                "project": artifact.context.project_id,
+                "project": artifact.project_id,
                 "metadata": {
                     "crl_id": str(artifact.id),
                     "crl_type": artifact.type,
-                    "crl_metadata": artifact.metadata,
-                    "related_artifacts": [str(uid) for uid in artifact.context.related_artifacts]
+                    "crl_metadata": artifact.metadata_blob,
+                    # Relations are handled via graph, not direct context in new model
                 },
-                "tags": ["crl", artifact.type, artifact.context.project_id]
+                "tags": ["crl", artifact.type, artifact.project_id]
             }
             
             response = await self.client.post("/memories", json=payload)

@@ -1,7 +1,7 @@
 import pytest
 from uuid import uuid4
 from apps.crl.core.models import ArtifactType, ArtifactStatus, ArtifactVisibility
-from apps.crl.services.storage.postgres import PostgresRepository
+from apps.crl.services.storage.sql import SQLRepository
 from apps.crl.mcp_server import quick_note, refine_artifact, record_failure, list_my_traces
 
 @pytest.mark.asyncio
