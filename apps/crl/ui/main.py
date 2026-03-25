@@ -54,9 +54,42 @@ async def main_page():
         ui.notify("Trace captured! 🧠", type="positive")
         await refresh_list()
 
-    async def refine_trace(artifact_id):
-        # Placeholder for refine logic dialog
-        ui.notify(f"Opening refinement for {artifact_id} (Coming soon)", type="info")
+    async def refine_trace(artifact):
+        with ui.dialog() as dialog, ui.card():
+            ui.label(f"Refine Trace: {artifact.title}").classes('text-h6')
+            
+            new_type = ui.select(
+                options=[t.value for t in ArtifactType if t != ArtifactType.TRACE],
+                label="Convert to Type"
+            ).classes('w-full')
+            
+            new_title = ui.input(label="Title", value=artifact.title).classes('w-full')
+            new_desc = ui.textarea(label="Description", value=artifact.description).classes('w-full')
+            
+            async def save_refinement():
+                if not new_type.value:
+                    ui.notify("Select a type!", type="warning")
+                    return
+                
+                async def _update(repo):
+                    art = await repo.get(artifact.id)
+                    art.type = ArtifactType(new_type.value)
+                    art.title = new_title.value
+                    art.description = new_desc.value
+                    art.status = ArtifactStatus.ACTIVE
+                    art.grace_period_end = None # Ready for Sync
+                    await repo.save(art)
+                
+                await run_db(_update)
+                ui.notify("Artifact Refined & Activated!", type="positive")
+                dialog.close()
+                await refresh_list()
+
+            with ui.row().classes('w-full justify-end'):
+                ui.button('Cancel', on_click=dialog.close).props('flat')
+                ui.button('Refine & Publish', on_click=save_refinement).props('color=primary')
+        
+        dialog.open()
 
     async def trigger_sync():
         from apps.crl.services.sync_service import SyncEngine
@@ -117,7 +150,7 @@ async def main_page():
 
                         with ui.row():
                             ui.button(
-                                icon="edit", on_click=lambda id=t.id: refine_trace(id)
+                                icon="edit", on_click=lambda _, a=t: refine_trace(a)
                             ).props("flat round dense color=primary").tooltip(
                                 "Refine to Artifact"
                             )
@@ -131,4 +164,4 @@ async def main_page():
 
 # Start
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(title="RAE-CRL", port=8080, reload=True)
+    ui.run(title="RAE-CRL", port=8090, reload=True)

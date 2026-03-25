@@ -1,0 +1,10 @@
+[run]
+omit =
+    apps/crl/ui/*
+    apps/crl/run_desktop.py
+    migrations/*
+    tests/*
+
+[report]
+show_missing = True
+precision = 2
