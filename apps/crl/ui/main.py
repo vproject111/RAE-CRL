@@ -18,12 +18,12 @@ async def run_db(func):
 @ui.page("/")
 async def main_page():
     # --- STATE ---
-    project_id = "default-lab"  # Hardcoded for MVP
+    project = "default-lab"  # Hardcoded for MVP
 
     # --- LOGIC ---
     async def load_traces():
         async def _get(repo):
-            return await repo.list_by_project(project_id, type=ArtifactType.TRACE)
+            return await repo.list_by_project(project, type=ArtifactType.TRACE)
 
         return await run_db(_get)
 
@@ -41,7 +41,7 @@ async def main_page():
                 type=ArtifactType.TRACE,
                 title=content[:50] + "..." if len(content) > 50 else content,
                 description=content,
-                project_id=project_id,
+                project=project,
                 status=ArtifactStatus.DRAFT,
                 visibility=ArtifactVisibility.PRIVATE,
                 grace_period_end=datetime.utcnow() + timedelta(hours=24),

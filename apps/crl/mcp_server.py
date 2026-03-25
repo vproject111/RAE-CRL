@@ -27,7 +27,7 @@ async def with_repo(func):
 
 
 @mcp.tool()
-async def quick_note(content: str, project_id: str, author: str = "researcher") -> str:
+async def quick_note(content: str, project: str, author: str = "researcher") -> str:
     """
     [HUMAN-CENTRIC] Creates a quick Epistemic Trace.
     Use this for rough ideas, doubts, or rapid logging.
@@ -40,7 +40,7 @@ async def quick_note(content: str, project_id: str, author: str = "researcher") 
             type=ArtifactType.TRACE,
             title=content[:50] + "..." if len(content) > 50 else content,
             description=content,
-            project_id=project_id,
+            project=project,
             author=author,
             status=ArtifactStatus.DRAFT,
             visibility=ArtifactVisibility.PRIVATE,
@@ -124,7 +124,7 @@ async def fork_artifact(original_id: UUID, new_author: str, reason: str) -> str:
             type=original.type,
             title=f"Fork of: {original.title}",
             description=f"Fork Reason: {reason}\n\nOriginal Content: {original.description}",
-            project_id=original.project_id,
+            project=original.project,
             author=new_author,
             status=ArtifactStatus.DRAFT,
             visibility=ArtifactVisibility.TEAM,  # Forks are usually for discussion
@@ -179,11 +179,11 @@ async def approve_artifact(artifact_id: UUID, approver_name: str) -> str:
 
 
 @mcp.tool()
-async def list_my_traces(project_id: str) -> str:
+async def list_my_traces(project: str) -> str:
     """Shows active traces / drafts to remind you what needs refinement."""
 
     async def _action(repo: SQLRepository):
-        artifacts = await repo.list_by_project(project_id, type=ArtifactType.TRACE)
+        artifacts = await repo.list_by_project(project, type=ArtifactType.TRACE)
         if not artifacts:
             return "No pending traces."
 

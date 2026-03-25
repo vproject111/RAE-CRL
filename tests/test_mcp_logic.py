@@ -41,7 +41,7 @@ async def test_mcp_refine_artifact(mock_repo):
     ):
         with patch("apps.crl.mcp_server.SQLRepository", return_value=mock_repo):
             # Use real object logic
-            art = BaseArtifact(title="T", type=ArtifactType.TRACE, project_id="p1")
+            art = BaseArtifact(title="T", type=ArtifactType.TRACE, project="p1")
             mock_repo.get.return_value = art
 
             result = await refine_artifact(
@@ -60,7 +60,7 @@ async def test_mcp_fork_artifact(mock_repo):
     ):
         with patch("apps.crl.mcp_server.SQLRepository", return_value=mock_repo):
             original = BaseArtifact(
-                title="O", type=ArtifactType.HYPOTHESIS, project_id="p1"
+                title="O", type=ArtifactType.HYPOTHESIS, project="p1"
             )
             mock_repo.get.return_value = original
             mock_repo.save.side_effect = lambda x: x  # Identity
@@ -80,7 +80,7 @@ async def test_mcp_approval_flow(mock_repo):
     ):
         with patch("apps.crl.mcp_server.SQLRepository", return_value=mock_repo):
             # Use real object logic
-            art = BaseArtifact(title="A", type=ArtifactType.HYPOTHESIS, project_id="p1")
+            art = BaseArtifact(title="A", type=ArtifactType.HYPOTHESIS, project="p1")
             mock_repo.get.return_value = art
             mock_repo.save.side_effect = lambda x: x
 
@@ -100,7 +100,7 @@ async def test_mcp_record_failure(mock_repo):
         "apps.crl.mcp_server.get_session", return_value=mock_session_gen(MagicMock())
     ):
         with patch("apps.crl.mcp_server.SQLRepository", return_value=mock_repo):
-            art = BaseArtifact(title="F", type=ArtifactType.EXPERIMENT, project_id="p1")
+            art = BaseArtifact(title="F", type=ArtifactType.EXPERIMENT, project="p1")
             mock_repo.get.return_value = art
 
             await record_failure(uuid4(), "Explosion")

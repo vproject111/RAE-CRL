@@ -26,7 +26,7 @@ async def memory_repo():
 async def test_save_and_get(memory_repo):
     repo = memory_repo  # Direct access because pytest-asyncio handles async fixtures
 
-    art = BaseArtifact(title="T1", type=ArtifactType.TRACE, project_id="p1")
+    art = BaseArtifact(title="T1", type=ArtifactType.TRACE, project="p1")
     saved = await repo.save(art)
 
     fetched = await repo.get(saved.id)
@@ -46,11 +46,11 @@ async def test_link_artifacts_rollback_on_error(memory_repo):
 async def test_list_by_project_filtering(memory_repo):
     repo = memory_repo
 
-    await repo.save(BaseArtifact(title="A1", type=ArtifactType.TRACE, project_id="p1"))
+    await repo.save(BaseArtifact(title="A1", type=ArtifactType.TRACE, project="p1"))
     await repo.save(
-        BaseArtifact(title="A2", type=ArtifactType.HYPOTHESIS, project_id="p1")
+        BaseArtifact(title="A2", type=ArtifactType.HYPOTHESIS, project="p1")
     )
-    await repo.save(BaseArtifact(title="B1", type=ArtifactType.TRACE, project_id="p2"))
+    await repo.save(BaseArtifact(title="B1", type=ArtifactType.TRACE, project="p2"))
 
     # Filter by project
     p1_items = await repo.list_by_project("p1")

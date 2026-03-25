@@ -52,7 +52,7 @@ class BaseArtifact(SQLModel, table=True):
     description: str = Field(default="")  # Traces might just be a title initially
 
     # Context
-    project_id: str = Field(index=True)
+    project: str = Field(index=True)
     research_phase: Optional[str] = None
 
     # Epistemic Safety & Status

@@ -29,9 +29,9 @@ class SQLRepository(ArtifactRepository):
         return result.scalars().first()
 
     async def list_by_project(
-        self, project_id: str, type: Optional[ArtifactType] = None
+        self, project: str, type: Optional[ArtifactType] = None
     ) -> List[BaseArtifact]:
-        query = select(BaseArtifact).where(BaseArtifact.project_id == project_id)
+        query = select(BaseArtifact).where(BaseArtifact.project == project)
         if type:
             query = query.where(BaseArtifact.type == type)
         result = await self.session.execute(query)

@@ -40,7 +40,7 @@ def upgrade() -> None:
         ),
         sa.Column("title", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("project_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("project", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("research_phase", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column(
             "status",
@@ -70,7 +70,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
-        op.f("ix_baseartifact_project_id"), "baseartifact", ["project_id"], unique=False
+        op.f("ix_baseartifact_project_id"), "baseartifact", ["project"], unique=False
     )
     op.create_index(
         op.f("ix_baseartifact_status"), "baseartifact", ["status"], unique=False

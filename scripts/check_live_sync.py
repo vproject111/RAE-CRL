@@ -22,9 +22,9 @@ async def live_check():
 
     # 1. Create a Test Artifact (Ready for Sync)
     artifact_id = uuid4()
-    project_id = f"live-check-{datetime.utcnow().timestamp()}"
+    project = f"live-check-{datetime.utcnow().timestamp()}"
 
-    print(f"1. Creating Artifact {artifact_id} in Project {project_id}...")
+    print(f"1. Creating Artifact {artifact_id} in Project {project}...")
 
     async for session in get_session():
         repo = SQLRepository(session)
@@ -33,7 +33,7 @@ async def live_check():
             type=ArtifactType.OBSERVATION,
             title="Live Sync Check Artifact",
             description="This is a test to verify CRL -> RAE connection.",
-            project_id=project_id,
+            project=project,
             status=ArtifactStatus.ACTIVE,
             visibility=ArtifactVisibility.TEAM,  # Must be Public/Team to sync
             grace_period_end=None,  # Immediate sync
@@ -71,7 +71,7 @@ async def live_check():
     await asyncio.sleep(2)
 
     try:
-        results = await client.query_artifacts("Live Sync Check", project_id)
+        results = await client.query_artifacts("Live Sync Check", project)
         found = any(
             r.get("content", "").startswith("[OBSERVATION] Live Sync Check")
             for r in results

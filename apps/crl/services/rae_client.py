@@ -32,14 +32,14 @@ class RAEClient:
                 "layer": "semantic",  # Research facts are semantic knowledge
                 "tenant_id": "research-lab",  # Default tenant for now
                 "agent_id": artifact.author,
-                "project": artifact.project_id,
+                "project": artifact.project,
                 "metadata": {
                     "crl_id": str(artifact.id),
                     "crl_type": artifact.type,
                     "crl_metadata": artifact.metadata_blob,
                     # Relations are handled via graph, not direct context in new model
                 },
-                "tags": ["crl", artifact.type, artifact.project_id],
+                "tags": ["crl", artifact.type, artifact.project],
             }
 
             response = await self.client.post("/memories", json=payload)
@@ -52,12 +52,12 @@ class RAEClient:
             # TODO: Implement local caching for offline mode
             return False
 
-    async def query_artifacts(self, query: str, project_id: str) -> List[dict]:
+    async def query_artifacts(self, query: str, project: str) -> List[dict]:
         """Retrieves artifacts relevant to the query."""
         try:
             payload = {
                 "query": query,
-                "project": project_id,
+                "project": project,
                 "k": 10,
                 "layers": ["semantic", "episodic"],
             }

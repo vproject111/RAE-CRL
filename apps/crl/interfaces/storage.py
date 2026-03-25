@@ -19,7 +19,7 @@ class ArtifactRepository(Protocol):
         ...
 
     async def list_by_project(
-        self, project_id: str, type: Optional[ArtifactType] = None
+        self, project: str, type: Optional[ArtifactType] = None
     ) -> List[BaseArtifact]:
         """List artifacts in a project context."""
         ...

@@ -23,7 +23,7 @@ def init(project: str):
 def add(type: ArtifactType, title: str, description: str, project: str):
     """Add a new research artifact."""
     artifact = BaseArtifact(
-        type=type, title=title, description=description, project_id=project
+        type=type, title=title, description=description, project=project
     )
 
     success = asyncio.run(rae.store_artifact(artifact))

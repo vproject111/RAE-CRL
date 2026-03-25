@@ -18,7 +18,7 @@ async def test_store_artifact_success():
         artifact = BaseArtifact(
             title="Test",
             type=ArtifactType.HYPOTHESIS,
-            project_id="p1",
+            project="p1",
             description="Content",
         )
 
@@ -37,7 +37,7 @@ async def test_store_artifact_failure():
         artifact = BaseArtifact(
             title="Test",
             type=ArtifactType.HYPOTHESIS,
-            project_id="p1",
+            project="p1",
             description="desc",
         )
 

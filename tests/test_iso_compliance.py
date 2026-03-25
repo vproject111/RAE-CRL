@@ -28,7 +28,7 @@ async def test_iso27001_access_control_sync_leakage():
     private_trace = BaseArtifact(
         title="Secret",
         type=ArtifactType.TRACE,
-        project_id="p1",
+        project="p1",
         visibility=ArtifactVisibility.PRIVATE,
         last_synced_at=None,
     )
@@ -37,7 +37,7 @@ async def test_iso27001_access_control_sync_leakage():
     protected_draft = BaseArtifact(
         title="Draft",
         type=ArtifactType.HYPOTHESIS,
-        project_id="p1",
+        project="p1",
         visibility=ArtifactVisibility.TEAM,
         grace_period_end=now + timedelta(hours=1),
         last_synced_at=None,
@@ -47,7 +47,7 @@ async def test_iso27001_access_control_sync_leakage():
     public_artifact = BaseArtifact(
         title="Public Knowledge",
         type=ArtifactType.OBSERVATION,
-        project_id="p1",
+        project="p1",
         visibility=ArtifactVisibility.PUBLIC,
         grace_period_end=None,
         last_synced_at=None,
@@ -112,12 +112,12 @@ async def test_iso42001_provenance_audit_trail():
 
         # 1. Original
         origin = BaseArtifact(
-            title="Origin", type=ArtifactType.HYPOTHESIS, project_id="p1"
+            title="Origin", type=ArtifactType.HYPOTHESIS, project="p1"
         )
         origin = await repo.save(origin)
 
         # 2. Fork
-        fork = BaseArtifact(title="Fork", type=ArtifactType.HYPOTHESIS, project_id="p1")
+        fork = BaseArtifact(title="Fork", type=ArtifactType.HYPOTHESIS, project="p1")
         fork = await repo.save(fork)
 
         # 3. Link

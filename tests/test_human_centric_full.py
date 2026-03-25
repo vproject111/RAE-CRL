@@ -12,10 +12,10 @@ from apps.crl.services.storage.sql import SQLRepository
 
 @pytest.mark.asyncio
 async def test_full_lifecycle_with_governance():
-    project_id = "test-gov-project"
+    project = "test-gov-project"
 
     # 1. Trace -> Refine
-    result = await quick_note("Controversial finding", project_id)
+    result = await quick_note("Controversial finding", project)
     import re
 
     trace_id = re.search(r"\((.*?)\)", result).group(1)

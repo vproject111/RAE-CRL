@@ -23,7 +23,7 @@ async def test_sync_engine_logic():
     ripe_artifact = BaseArtifact(
         title="Mature Knowledge",
         type=ArtifactType.OBSERVATION,
-        project_id="p1",
+        project="p1",
         visibility=ArtifactVisibility.TEAM,
         grace_period_end=datetime.utcnow() - timedelta(hours=1),  # Expired grace
         last_synced_at=None,
