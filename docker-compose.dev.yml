@@ -10,7 +10,7 @@ services:
     volumes:
       - .:/app
     environment:
-      - RAE_CORE_URL=http://host.docker.internal:8001/api/v1
+      - RAE_CORE_URL=http://host.docker.internal:8001/api/v2
       - DATABASE_URL=postgresql+asyncpg://crl_user:crl_pass@crl-db:5432/rae_crl
       - LOG_LEVEL=DEBUG
       - RELOAD=true
