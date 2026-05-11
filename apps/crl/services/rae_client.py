@@ -67,3 +67,56 @@ class RAEClient:
         except httpx.HTTPError as e:
             logger.error("rae_query_failed", error=str(e))
             return []
+
+    async def global_search(self, query: str) -> List[dict]:
+        """Queries the entire Hive Mind (all projects) for related knowledge."""
+        try:
+            payload = {
+                "query": query,
+                "k": 5,
+                "layers": ["semantic", "reflective"],
+            }
+            response = await self.client.post("/memories/query", json=payload)
+            response.raise_for_status()
+            return response.json().get("results", [])
+        except Exception as e:
+            logger.error("global_search_failed", error=str(e))
+            return []
+
+    async def detect_conflicts(self, target: BaseArtifact, context: List[BaseArtifact]) -> Optional[str]:
+        """Uses RAE-Core's LLM capabilities to detect logical conflicts between artifacts."""
+        if not context:
+            return None
+
+        # Build prompt for RAE (assuming RAE has an /llm/chat or similar endpoint)
+        # For now, let's use a specialized reflection endpoint if available, or a generic chat.
+        context_str = "\n".join([f"- [{a.type}] {a.title}: {a.description}" for a in context])
+        prompt = f"""Analyze the following research context and the new item. 
+Is there any logical contradiction or violation of assumptions?
+
+CONTEXT:
+{context_str}
+
+NEW ITEM:
+[{target.type}] {target.title}
+{target.description}
+
+If there is a conflict, explain it concisely. If no conflict, respond with 'NONE'."""
+
+        try:
+            # Note: This assumes RAE-Core v3+ with /chat or /reflect endpoint
+            payload = {
+                "prompt": prompt,
+                "system_prompt": "You are a scientific reasoning auditor. Be critical and precise."
+            }
+            # Fallback to chat if reflect is not there
+            response = await self.client.post("/chat", json=payload)
+            response.raise_for_status()
+            result = response.json().get("response", "NONE")
+            
+            if "NONE" in result.upper():
+                return None
+            return result
+        except Exception as e:
+            logger.error("conflict_detection_failed", error=str(e))
+            return None

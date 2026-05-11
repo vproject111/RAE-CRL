@@ -37,6 +37,16 @@ class SQLRepository(ArtifactRepository):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def list_relations(self, project: str) -> List[ArtifactRelation]:
+        """Lists all relations between artifacts in a given project."""
+        # This is a bit tricky since ArtifactRelation doesn't have a 'project' field.
+        # We need to join with BaseArtifact.
+        stmt = select(ArtifactRelation).join(
+            BaseArtifact, cast(Any, ArtifactRelation.source_id == BaseArtifact.id)
+        ).where(BaseArtifact.project == project)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def link_artifacts(
         self, source_id: UUID, target_id: UUID, relation: str
     ) -> bool:
