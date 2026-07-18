@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 import json
 
+from fastapi import Request
 from nicegui import ui
 
 from apps.crl.core.database import get_session
@@ -21,10 +22,21 @@ async def run_db(func):
         return await func(repo)
 
 @ui.page("/")
-async def main_page():
-    # --- STYLES & FONTS ---
+async def main_page(request: Request):
+    # --- STYLES, FONTS & WCGA INLINE CONFIG ---
     ui.add_head_html('''
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+        // Left-shifted WCGA initialization to prevent page load flash (FOUC)
+        (function() {
+            if (localStorage.getItem('wcgaKontrast') === '1') {
+                document.documentElement.classList.add('wcga-contrast');
+            }
+            if (localStorage.getItem('wcgaFonts') === '1') {
+                document.documentElement.classList.add('wcga-fonts');
+            }
+        })();
+    </script>
     <style>
         body {
             font-family: 'Outfit', sans-serif;
@@ -54,6 +66,70 @@ async def main_page():
         .glow-text-violet {
             text-shadow: 0 0 8px rgba(139, 92, 246, 0.5);
         }
+        
+        /* --- ACCESSIBILITY / WCGA CONTRAST OVERRIDES --- */
+        .wcga-contrast body {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+        }
+        .wcga-contrast .glass-card {
+            background: #ffffff !important;
+            border: 2px solid #000000 !important;
+            color: #000000 !important;
+        }
+        .wcga-contrast .text-white, 
+        .wcga-contrast .text-slate-300, 
+        .wcga-contrast .text-slate-400 {
+            color: #000000 !important;
+        }
+        .wcga-contrast .text-purple-400, 
+        .wcga-contrast .text-cyan-400 {
+            color: #1e1b4b !important;
+            font-weight: bold !important;
+        }
+        .wcga-contrast .glow-text-cyan, 
+        .wcga-contrast .glow-text-violet {
+            text-shadow: none !important;
+            color: #000000 !important;
+        }
+        .wcga-contrast .bg-slate-950, 
+        .wcga-contrast .bg-slate-900/60,
+        .wcga-contrast .bg-slate-950/90,
+        .wcga-contrast .bg-slate-950/80 {
+            background-color: #f8fafc !important;
+            border-color: #000000 !important;
+            color: #000000 !important;
+        }
+        .wcga-contrast input, 
+        .wcga-contrast textarea, 
+        .wcga-contrast select {
+            color: #000000 !important;
+            background-color: #ffffff !important;
+            border: 2px solid #000000 !important;
+        }
+        .wcga-contrast .q-field__native,
+        .wcga-contrast .q-field__label,
+        .wcga-contrast .q-select__selection {
+            color: #000000 !important;
+        }
+        
+        /* --- ACCESSIBILITY / WCGA FONTS OVERRIDES --- */
+        .wcga-fonts body {
+            font-size: 1.25rem !important;
+        }
+        .wcga-fonts .text-xs {
+            font-size: 0.95rem !important;
+        }
+        .wcga-fonts .text-sm {
+            font-size: 1.15rem !important;
+        }
+        .wcga-fonts .text-lg {
+            font-size: 1.45rem !important;
+        }
+        .wcga-fonts .text-2xl {
+            font-size: 2.1rem !important;
+        }
+
         /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 8px;
@@ -81,6 +157,9 @@ async def main_page():
     
     # Selected Node for Inspector
     selected_node_id = None
+
+    # Cookie Acceptance check from request
+    cookie_accepted = request.cookies.get('cookieAccepted') == 'true'
 
     # Load data helpers
     async def load_traces():
@@ -232,6 +311,27 @@ async def main_page():
             ui.notify(f"Imported {file.name} successfully! 🧪", type="positive")
         await refresh_all()
 
+    # --- WCGA CONTROLS CLIENT-SIDE ACTIONS ---
+    def toggle_wcga_contrast():
+        ui.run_javascript('''
+            const hasContrast = document.documentElement.classList.toggle("wcga-contrast");
+            localStorage.setItem("wcgaKontrast", hasContrast ? "1" : "0");
+        ''')
+        ui.notify("Contrast mode toggled! 🌓")
+
+    def toggle_wcga_fonts():
+        ui.run_javascript('''
+            const hasFonts = document.documentElement.classList.toggle("wcga-fonts");
+            localStorage.setItem("wcgaFonts", hasFonts ? "1" : "0");
+        ''')
+        ui.notify("Large text mode toggled! 🔍")
+
+    # --- COOKIE BANNER ACTION ---
+    def accept_cookies():
+        ui.run_javascript('document.cookie = "cookieAccepted=true; max-age=2592000; path=/";')
+        cookie_banner_container.set_visibility(False)
+        ui.notify("Cookies accepted. Thank you! 🍪")
+
     # --- REFRESH HELPER ---
     async def refresh_all():
         await refresh_inbox()
@@ -269,7 +369,13 @@ async def main_page():
                 ui.badge(color='cyan').classes('w-2 h-2 rounded-full p-0 q-mr-xs')
                 ui.label("AIMS Status: COMPLIANT").classes('text-xs text-cyan-400')
                 
-        with ui.row().classes('gap-2'):
+        with ui.row().classes('gap-2 items-center'):
+            # WCGA Buttons
+            ui.button(icon="contrast", on_click=toggle_wcga_contrast).props('flat round size=sm color=white').tooltip("Toggle Contrast Mode (WCGA)")
+            ui.button(icon="format_size", on_click=toggle_wcga_fonts).props('flat round size=sm color=white').tooltip("Toggle Large Text Size (WCGA)")
+            
+            ui.separator().props('vertical').classes('bg-white/10 h-6 q-mx-sm')
+            
             ui.button("Sync RAE Core", icon="sync", on_click=trigger_sync).props('color=cyan size=sm').classes('code-font')
             ui.button("Quantum Portal", icon="open_in_new", on_click=lambda: ui.open("http://localhost:8080/")).props('flat dense size=sm color=white')
 
@@ -623,6 +729,24 @@ async def main_page():
                                 draft_html_preview.content = "### LaTeX Mode Active\nReview code draft in left panel. LaTeX compilation output is stored as `document.pdf`."
                         
                         await refresh_compiler_preview()
+
+    # --- COOKIE CONSENT BANNER (DREAMSOFT COMPATIBLE) ---
+    with ui.card().classes('fixed bottom-4 left-4 right-4 z-[9999] glass-card border border-cyan-500/30 text-white q-pa-md flex flex-row items-center justify-between no-wrap gap-4') as cookie_banner_container:
+        with ui.column().classes('gap-1'):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon('cookie', color='cyan').classes('text-lg')
+                ui.label("Cookie Information / Polityka Ciasteczek").classes('text-sm font-bold text-cyan-300')
+            ui.label(
+                "Ta witryna RAE-CRL używa ciasteczek (cookies) w celach funkcjonalnych (sesje użytkownika, zapisywanie motywu dostępności WCGA) "
+                "oraz do zapewnienia zgodności i bezpiecznej integracji z ekosystemem Dreamsoft Factory. Kontynuując korzystanie, zgadzasz się na ich zapis."
+            ).classes('text-xs text-slate-300')
+        with ui.row().classes('gap-2 no-wrap'):
+            ui.button("Ustawienia", on_click=lambda: ui.notify("Funkcjonalne pliki cookies sesji oraz ustawień WCGA są wymagane.")).props('flat dense size=sm color=white')
+            ui.button("Akceptuję Wszystkie", on_click=accept_cookies).props('color=cyan size=sm text-color=slate-950')
+
+    # Initial hide of cookie banner if already accepted
+    if cookie_accepted:
+        cookie_banner_container.set_visibility(False)
 
 # Start NiceGUI
 if __name__ in {"__main__", "__mp_main__"}:
