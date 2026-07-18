@@ -24,7 +24,7 @@ async def run_db(func):
 @ui.page("/")
 async def main_page(request: Request):
     # --- STYLES, FONTS & WCGA INLINE CONFIG ---
-    ui.add_head_html('''
+    ui.add_head_html(r'''
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script>
         // Left-shifted WCGA initialization to prevent page load flash (FOUC)
@@ -68,65 +68,162 @@ async def main_page(request: Request):
         }
         
         /* --- ACCESSIBILITY / WCGA CONTRAST OVERRIDES --- */
-        .wcga-contrast body {
+        html.wcga-contrast body,
+        html.wcga-contrast .q-splitter__panel,
+        html.wcga-contrast .q-tab-panel,
+        html.wcga-contrast .q-tab-panels,
+        html.wcga-contrast .q-card,
+        html.wcga-contrast .glass-card {
             background-color: #ffffff !important;
-            color: #000000 !important;
-        }
-        .wcga-contrast .glass-card {
             background: #ffffff !important;
-            border: 2px solid #000000 !important;
+            color: #000000 !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        /* Explicit borders only for cards and dialogs */
+        html.wcga-contrast .glass-card,
+        html.wcga-contrast .q-card {
+            border: 3px solid #000000 !important;
+        }
+        html.wcga-contrast .text-white, 
+        html.wcga-contrast .text-slate-200,
+        html.wcga-contrast .text-slate-300, 
+        html.wcga-contrast .text-slate-400 {
             color: #000000 !important;
         }
-        .wcga-contrast .text-white, 
-        .wcga-contrast .text-slate-300, 
-        .wcga-contrast .text-slate-400 {
-            color: #000000 !important;
-        }
-        .wcga-contrast .text-purple-400, 
-        .wcga-contrast .text-cyan-400 {
+        html.wcga-contrast .text-purple-400, 
+        html.wcga-contrast .text-cyan-400,
+        html.wcga-contrast .text-purple-300,
+        html.wcga-contrast .text-cyan-300 {
             color: #1e1b4b !important;
             font-weight: bold !important;
         }
-        .wcga-contrast .glow-text-cyan, 
-        .wcga-contrast .glow-text-violet {
+        html.wcga-contrast .glow-text-cyan, 
+        html.wcga-contrast .glow-text-violet {
             text-shadow: none !important;
             color: #000000 !important;
         }
-        .wcga-contrast .bg-slate-950, 
-        .wcga-contrast .bg-slate-900/60,
-        .wcga-contrast .bg-slate-950/90,
-        .wcga-contrast .bg-slate-950/80 {
-            background-color: #f8fafc !important;
+        /* Correct matching of Tailwind opacity background classes */
+        html.wcga-contrast .bg-slate-950, 
+        html.wcga-contrast .bg-slate-900,
+        html.wcga-contrast .bg-slate-900\/60,
+        html.wcga-contrast .bg-slate-950\/90,
+        html.wcga-contrast .bg-slate-950\/80 {
+            background-color: #ffffff !important;
+            background: #ffffff !important;
             border-color: #000000 !important;
             color: #000000 !important;
         }
-        .wcga-contrast input, 
-        .wcga-contrast textarea, 
-        .wcga-contrast select {
+        /* Splitter borders and dividers */
+        html.wcga-contrast .q-splitter__separator {
+            background-color: #000000 !important;
+            width: 3px !important;
+        }
+        html.wcga-contrast .border-r {
+            border-right: 3px solid #000000 !important;
+        }
+        /* Top header styling for light contrast */
+        html.wcga-contrast header.q-header,
+        html.wcga-contrast .bg-slate-950\/90 {
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            border-bottom: 3px solid #000000 !important;
+        }
+        html.wcga-contrast header.q-header * {
+            color: #000000 !important;
+        }
+        /* Outer fields & controls borders (single border only) */
+        html.wcga-contrast .q-field__control {
+            border: 2px solid #000000 !important;
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            box-shadow: none !important;
+        }
+        html.wcga-contrast .q-field__control::before,
+        html.wcga-contrast .q-field__control::after {
+            display: none !important; /* Remove Quasar default lines */
+        }
+        /* Clean internal elements to prevent double borders */
+        html.wcga-contrast input, 
+        html.wcga-contrast textarea, 
+        html.wcga-contrast select,
+        html.wcga-contrast .q-field,
+        html.wcga-contrast .q-field__control-container {
+            color: #000000 !important;
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            background-color: transparent !important;
+        }
+        html.wcga-contrast .q-field__native,
+        html.wcga-contrast .q-field__label,
+        html.wcga-contrast .q-select__selection,
+        html.wcga-contrast .q-input,
+        html.wcga-contrast .q-select,
+        html.wcga-contrast .q-field__prefix,
+        html.wcga-contrast .q-field__suffix {
+            color: #000000 !important;
+        }
+        html.wcga-contrast .q-tab__label,
+        html.wcga-contrast .q-tab__icon,
+        html.wcga-contrast .q-tab__content {
+            color: #000000 !important;
+        }
+        html.wcga-contrast .q-separator {
+            background-color: #000000 !important;
+            height: 2px !important;
+        }
+        html.wcga-contrast .q-btn {
+            border: 2px solid #000000 !important;
             color: #000000 !important;
             background-color: #ffffff !important;
+        }
+        
+        /* Floating Dropdown Menus & Popups */
+        body.wcga-contrast .q-menu,
+        body.wcga-contrast .q-list,
+        body.wcga-contrast .q-item {
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            color: #000000 !important;
             border: 2px solid #000000 !important;
         }
-        .wcga-contrast .q-field__native,
-        .wcga-contrast .q-field__label,
-        .wcga-contrast .q-select__selection {
+        body.wcga-contrast .q-item__label {
             color: #000000 !important;
+        }
+        /* Active hover elements in dropdowns */
+        body.wcga-contrast .q-item--active,
+        body.wcga-contrast .q-item.q-manual-focusable--focused {
+            background-color: #000000 !important;
+            color: #ffffff !important;
+        }
+        body.wcga-contrast .q-item--active .q-item__label,
+        body.wcga-contrast .q-item.q-manual-focusable--focused .q-item__label {
+            color: #ffffff !important;
         }
         
         /* --- ACCESSIBILITY / WCGA FONTS OVERRIDES --- */
-        .wcga-fonts body {
+        html.wcga-fonts body,
+        html.wcga-fonts p,
+        html.wcga-fonts label,
+        html.wcga-fonts input,
+        html.wcga-fonts textarea,
+        html.wcga-fonts select,
+        html.wcga-fonts span {
             font-size: 1.25rem !important;
         }
-        .wcga-fonts .text-xs {
+        html.wcga-fonts .text-xs {
             font-size: 0.95rem !important;
         }
-        .wcga-fonts .text-sm {
+        html.wcga-fonts .text-sm {
             font-size: 1.15rem !important;
         }
-        .wcga-fonts .text-lg {
+        html.wcga-fonts .text-lg {
             font-size: 1.45rem !important;
         }
-        .wcga-fonts .text-2xl {
+        html.wcga-fonts .text-2xl {
             font-size: 2.1rem !important;
         }
 
@@ -730,6 +827,34 @@ async def main_page(request: Request):
                         
                         await refresh_compiler_preview()
 
+    # Cookie Settings Dialog
+    with ui.dialog() as cookie_settings_dialog:
+        with ui.card().classes('glass-card text-white w-96 border border-cyan-500/30 q-pa-md'):
+            ui.label("Ustawienia Prywatności & Cookies").classes('text-lg font-bold text-cyan-400')
+            ui.label("Skonfiguruj pliki cookies dla Twojej sesji badawczej:").classes('text-xs text-slate-300 q-mb-md')
+            
+            c_session = ui.checkbox("Ciasteczka sesyjne (Wymagane)", value=True).props('disable')
+            c_wcga = ui.checkbox("Preferencje ułatwień WCGA", value=True)
+            c_dreamsoft = ui.checkbox("Integracja z Dreamsoft Factory", value=True)
+            
+            async def save_cookie_settings():
+                ui.run_javascript('document.cookie = "cookieAccepted=true; max-age=2592000; path=/";')
+                if not c_wcga.value:
+                    # Clear WCGA from localStorage and body classes
+                    ui.run_javascript('''
+                        localStorage.removeItem("wcgaKontrast");
+                        localStorage.removeItem("wcgaFonts");
+                        document.documentElement.classList.remove("wcga-contrast", "wcga-fonts");
+                        document.body.classList.remove("wcga-contrast", "wcga-fonts");
+                    ''')
+                cookie_settings_dialog.close()
+                cookie_banner_container.set_visibility(False)
+                ui.notify("Ustawienia ciasteczek zostały pomyślnie zapisane.", type="positive")
+                
+            with ui.row().classes('w-full justify-end q-mt-md gap-2'):
+                ui.button("Anuluj", on_click=cookie_settings_dialog.close).props('flat dense text-color=white')
+                ui.button("Zapisz", on_click=save_cookie_settings).props('color=cyan text-color=slate-950')
+
     # --- COOKIE CONSENT BANNER (DREAMSOFT COMPATIBLE) ---
     with ui.card().classes('fixed bottom-4 left-4 right-4 z-[9999] glass-card border border-cyan-500/30 text-white q-pa-md flex flex-row items-center justify-between no-wrap gap-4') as cookie_banner_container:
         with ui.column().classes('gap-1'):
@@ -741,7 +866,7 @@ async def main_page(request: Request):
                 "oraz do zapewnienia zgodności i bezpiecznej integracji z ekosystemem Dreamsoft Factory. Kontynuując korzystanie, zgadzasz się na ich zapis."
             ).classes('text-xs text-slate-300')
         with ui.row().classes('gap-2 no-wrap'):
-            ui.button("Ustawienia", on_click=lambda: ui.notify("Funkcjonalne pliki cookies sesji oraz ustawień WCGA są wymagane.")).props('flat dense size=sm color=white')
+            ui.button("Ustawienia", on_click=cookie_settings_dialog.open).props('flat dense size=sm color=white')
             ui.button("Akceptuję Wszystkie", on_click=accept_cookies).props('color=cyan size=sm text-color=slate-950')
 
     # Initial hide of cookie banner if already accepted
