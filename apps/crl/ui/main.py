@@ -144,6 +144,27 @@ async def main_page(request: Request):
         html.wcga-contrast .q-field__control::after {
             display: none !important; /* Remove Quasar default lines */
         }
+        /* Overrides for Quasar components with 'dark' property */
+        html.wcga-contrast .q-field--dark .q-field__control {
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+        }
+        html.wcga-contrast .q-field--dark .q-field__native,
+        html.wcga-contrast .q-field--dark .q-field__prefix,
+        html.wcga-contrast .q-field--dark .q-field__suffix,
+        html.wcga-contrast .q-field--dark .q-field__input,
+        html.wcga-contrast .q-field--dark .q-field__label,
+        html.wcga-contrast .q-field--dark .q-select__selection,
+        html.wcga-contrast .q-field--dark .q-placeholder {
+            color: #000000 !important;
+        }
+        html.wcga-contrast .q-field--dark .q-field__marginal,
+        html.wcga-contrast .q-field--dark .q-field__append .q-icon,
+        html.wcga-contrast .q-field--dark .q-select__dropdown-icon {
+            color: #000000 !important;
+            opacity: 1 !important;
+        }
         /* Clean internal elements to prevent double borders */
         html.wcga-contrast input, 
         html.wcga-contrast textarea, 
