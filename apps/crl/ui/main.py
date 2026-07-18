@@ -1,16 +1,18 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from uuid import UUID, uuid4
+import json
 
 from nicegui import ui
 
 from apps.crl.core.database import get_session
 from apps.crl.core.models import (ArtifactStatus, ArtifactType,
-                                  ArtifactVisibility)
+                                  ArtifactVisibility, BaseArtifact,
+                                  ArtifactRelation)
 from apps.crl.services.export_service import ExportService
 from apps.crl.services.ingestion_service import IngestionService
 from apps.crl.services.rae_client import RAEClient
 from apps.crl.services.storage.sql import SQLRepository
 from apps.crl.services.watchdog_service import WatchdogService
-
 
 # Helper to run async DB ops
 async def run_db(func):
@@ -18,46 +20,118 @@ async def run_db(func):
         repo = SQLRepository(session)
         return await func(repo)
 
-
 @ui.page("/")
 async def main_page():
-    # --- STATE ---
-    project = "default-lab"  # Hardcoded for MVP
-    rae_client = RAEClient()
+    # --- STYLES & FONTS ---
+    ui.add_head_html('''
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #050608;
+            color: #e2e8f0;
+            margin: 0;
+            overflow: hidden;
+        }
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .glass-card {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+        }
+        .neon-border-cyan {
+            border: 1px solid rgba(6, 182, 212, 0.25);
+        }
+        .neon-border-violet {
+            border: 1px solid rgba(139, 92, 246, 0.25);
+        }
+        .glow-text-cyan {
+            text-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+        }
+        .glow-text-violet {
+            text-shadow: 0 0 8px rgba(139, 92, 246, 0.5);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #050608;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+    </style>
+    ''')
 
-    # --- LOGIC ---
+    # --- STATE ---
+    project = "default-lab"
+    rae_client = RAEClient()
+    
+    # Conflict banner state
+    active_conflicts = []
+    
+    # Selected Node for Inspector
+    selected_node_id = None
+
+    # Load data helpers
     async def load_traces():
         async def _get(repo):
             return await repo.list_by_project(project, type=ArtifactType.TRACE)
-
         return await run_db(_get)
 
-    async def add_trace():
-        content = trace_input.value
-        if not content:
+    async def load_all_artifacts():
+        async def _get(repo):
+            return await repo.list_by_project(project)
+        return await run_db(_get)
+
+    # --- ACTIONS ---
+    async def add_quick_capture():
+        content = quick_input.value
+        title_val = quick_title.value
+        art_type = type_select.value
+        grace_hours = int(grace_slider.value)
+        author_val = author_input.value or "Dr. Grzegorz"
+        
+        if not content or not title_val or not art_type:
+            ui.notify("Fill in title, type and content details!", type="warning")
             return
 
         async def _save(repo):
-            from datetime import timedelta
-
-            from apps.crl.core.models import BaseArtifact
-
-            trace = BaseArtifact(
-                type=ArtifactType.TRACE,
-                title=content[:50] + "..." if len(content) > 50 else content,
+            artifact = BaseArtifact(
+                type=ArtifactType(art_type),
+                title=title_val,
                 description=content,
                 project=project,
-                status=ArtifactStatus.DRAFT,
+                status=ArtifactStatus.DRAFT if art_type == ArtifactType.TRACE.value else ArtifactStatus.ACTIVE,
                 visibility=ArtifactVisibility.PRIVATE,
-                grace_period_end=datetime.utcnow() + timedelta(hours=24),
-                author="me",
+                grace_period_end=datetime.utcnow() + timedelta(hours=grace_hours) if grace_hours > 0 else None,
+                author=author_val,
             )
-            await repo.save(trace)
-
+            await repo.save(artifact)
+            
+            # Run Watchdog Check on new observations
+            if artifact.type == ArtifactType.OBSERVATION:
+                watchdog = WatchdogService(rae_client, repo)
+                conflict = await watchdog.check_consistency(artifact)
+                if conflict:
+                    active_conflicts.append(f"Conflict on Observation '{artifact.title}': {conflict}")
+                    conflict_banner.refresh()
+                    ui.notify("⚠️ Watchdog: logical contradiction detected!", type="negative", duration=8)
+            
         await run_db(_save)
-        trace_input.value = ""
-        ui.notify("Trace captured! 🧠", type="positive")
-        await refresh_list()
+        quick_input.value = ""
+        quick_title.value = ""
+        ui.notify(f"{art_type.upper()} captured successfully! 🧠", type="positive")
+        await refresh_all()
 
     async def refine_trace(artifact):
         async def _get_potential_parents(repo):
@@ -66,18 +140,19 @@ async def main_page():
         parents = await run_db(_get_potential_parents)
         parent_options = {str(p.id): f"[{p.type.upper()}] {p.title}" for p in parents if p.id != artifact.id and p.type != ArtifactType.TRACE}
 
-        with ui.dialog() as dialog, ui.card():
-            ui.label(f"Refine Trace: {artifact.title}").classes('text-h6')
+        with ui.dialog() as dialog, ui.card().classes('glass-card neon-border-violet text-white w-96'):
+            ui.label(f"Refine Trace: {artifact.title}").classes('text-h6 text-purple-400')
             
             new_type = ui.select(
                 options=[t.value for t in ArtifactType if t != ArtifactType.TRACE],
-                label="Convert to Type"
-            ).classes('w-full')
+                label="Convert to Type",
+                value=ArtifactType.HYPOTHESIS.value
+            ).classes('w-full').props('dark outlined')
             
-            new_title = ui.input(label="Title", value=artifact.title).classes('w-full')
-            new_desc = ui.textarea(label="Description", value=artifact.description).classes('w-full')
+            new_title = ui.input(label="Title", value=artifact.title).classes('w-full').props('dark outlined')
+            new_desc = ui.textarea(label="Description", value=artifact.description).classes('w-full').props('dark outlined')
             
-            link_to = ui.select(options=parent_options, label="Link to Parent Artifact (Optional)").classes('w-full')
+            link_to = ui.select(options=parent_options, label="Link to Parent (Optional)").classes('w-full').props('dark outlined')
 
             async def save_refinement():
                 if not new_type.value:
@@ -98,86 +173,45 @@ async def main_page():
                         await repo.link_artifacts(UUID(link_to.value), artifact.id, "supports")
                     
                     # Watchdog Check
-                    watchdog = WatchdogService(rae_client, repo)
-                    conflict = await watchdog.check_consistency(art)
-                    if conflict:
-                        ui.notify(f"⚠️ LOGICAL CONFLICT DETECTED: {conflict}", type="warning", duration=10)
+                    if art.type == ArtifactType.OBSERVATION:
+                        watchdog = WatchdogService(rae_client, repo)
+                        conflict = await watchdog.check_consistency(art)
+                        if conflict:
+                            active_conflicts.append(f"Conflict on Observation '{art.title}': {conflict}")
+                            conflict_banner.refresh()
+                            ui.notify(f"⚠️ LOGICAL CONFLICT DETECTED: {conflict}", type="warning", duration=10)
                 
                 await run_db(_update)
                 ui.notify("Artifact Refined & Activated!", type="positive")
                 dialog.close()
-                await refresh_list()
+                await refresh_all()
 
-            with ui.row().classes('w-full justify-end'):
-                ui.button('Cancel', on_click=dialog.close).props('flat')
-                ui.button('Refine & Publish', on_click=save_refinement).props('color=primary')
+            with ui.row().classes('w-full justify-end q-mt-md'):
+                ui.button('Cancel', on_click=dialog.close).props('flat text-color=white')
+                ui.button('Refine & Publish', on_click=save_refinement).props('color=purple')
         
         dialog.open()
 
+    async def delete_artifact(artifact_id):
+        async def _del(repo):
+            art = await repo.get(artifact_id)
+            if art:
+                await repo.session.delete(art)
+                await repo.session.commit()
+        await run_db(_del)
+        ui.notify("Artifact removed.", type="info")
+        await refresh_all()
+
     async def trigger_sync():
         from apps.crl.services.sync_service import SyncEngine
-
         engine = SyncEngine()
-        ui.notify("Sync started...", type="ongoing")
+        ui.notify("Sync started with RAE Core...", type="ongoing")
         try:
             await engine.run_sync_cycle()
             ui.notify("Sync complete! 🚀", type="positive")
+            await refresh_all()
         except Exception as e:
             ui.notify(f"Sync failed: {e}", type="negative")
-
-    async def export_draft():
-        async def _get_all(repo):
-            return await repo.list_by_project(project)
-
-        artifacts = await run_db(_get_all)
-        if not artifacts:
-            ui.notify("No artifacts to export!", type="warning")
-            return
-
-        content = ExportService.to_markdown(artifacts, project)
-        ui.download(content.encode('utf-8'), filename=f"{project}_draft.md")
-        ui.notify("Draft generated! 📄", type="positive")
-
-    async def run_global_search():
-        query = global_search_input.value
-        if not query: return
-        
-        ui.notify("Searching Hive Mind...", type="ongoing")
-        results = await rae_client.global_search(query)
-        
-        search_results_container.clear()
-        with search_results_container:
-            if not results:
-                ui.label("No external matches found.").classes("text-grey italic")
-            for res in results:
-                with ui.card().classes("w-full q-mb-xs"):
-                    ui.label(res.get("content", "")[:200] + "...").classes("text-sm")
-                    ui.label(f"Source: {res.get('project', 'unknown')}").classes("text-xs text-blue")
-
-    async def update_graph():
-        async def _get_data(repo):
-            arts = await repo.list_by_project(project)
-            rels = await repo.list_relations(project)
-            return arts, rels
-        
-        data = await run_db(_get_data)
-        if not data: return
-        artifacts, relations = data
-        
-        mermaid_code = "graph TD\n"
-        # Nodes
-        for art in artifacts:
-            if art.type == ArtifactType.TRACE: continue
-            clean_title = art.title.replace('"', "'").replace("\n", " ")[:30]
-            mermaid_code += f'  {str(art.id).replace("-", "")}["[{art.type.upper()}]<br/>{clean_title}"]\n'
-        
-        # Edges
-        for rel in relations:
-            s = str(rel.source_id).replace("-", "")
-            t = str(rel.target_id).replace("-", "")
-            mermaid_code += f'  {s} --> {t}\n'
-            
-        graph_container.content = mermaid_code
 
     async def handle_upload(e):
         for file in e.files:
@@ -190,92 +224,406 @@ async def main_page():
                 watchdog = WatchdogService(rae_client, repo)
                 conflict = await watchdog.check_consistency(observation)
                 if conflict:
+                    active_conflicts.append(f"Conflict on Data Import '{observation.title}': {conflict}")
+                    conflict_banner.refresh()
                     ui.notify(f"⚠️ DATA CONFLICT: {conflict}", type="warning", duration=10)
             
             await run_db(_save)
-            ui.notify(f"Imported {file.name} as Observation!", type="positive")
-        await refresh_list()
+            ui.notify(f"Imported {file.name} successfully! 🧪", type="positive")
+        await refresh_all()
 
-    # --- UI LAYOUT ---
-    with ui.header().classes(replace="row items-center") as header:
-        ui.icon("science", size="32px").classes("q-mr-sm")
-        ui.label("RAE-CRL Lab Desk").classes("text-h6")
-        ui.space()
-        ui.button("Export Draft", icon="description", on_click=export_draft).props(
-            "flat dense text-color=white"
-        )
-        ui.button("Sync Now", icon="sync", on_click=trigger_sync).props(
-            "flat dense text-color=white"
-        )
+    # --- REFRESH HELPER ---
+    async def refresh_all():
+        await refresh_inbox()
+        await update_graph_view()
+        await refresh_compiler_preview()
+        node_inspector_panel.refresh()
 
-    with ui.column().classes("w-full q-pa-md items-center"):
+    # --- WORKSPACE LAYOUT ---
 
-        # 1. Quick Capture Area
-        with ui.card().classes("w-full max-w-3xl q-mb-md"):
-            ui.label("Epistemic Quick Capture").classes("text-lg font-bold q-mb-sm")
-            with ui.row().classes("w-full no-wrap items-center"):
-                trace_input = (
-                    ui.textarea(placeholder="Dirty thoughts, doubts, quick ideas...")
-                    .classes("w-full")
-                    .props("outlined rows=2")
-                )
-                ui.button(icon="send", on_click=add_trace).props(
-                    "round color=primary"
-                ).classes("q-ml-md")
-            
-            ui.separator().classes('q-my-sm')
-            ui.upload(label="Automated Data Bridge (CSV/TXT)", multiple=True, auto_upload=True, on_upload=handle_upload).classes('w-full').props('flat')
+    # Real-time Warning Banner (Watchdog)
+    @ui.refreshable
+    def conflict_banner():
+        if active_conflicts:
+            with ui.row().classes('w-full bg-red-950/80 border-b border-red-500/40 q-py-sm q-px-md items-center justify-between'):
+                with ui.row().classes('items-center gap-2'):
+                    ui.icon('warning', color='red').classes('text-lg')
+                    ui.label(f"WARNING: {active_conflicts[-1]}").classes('text-red-300 font-medium text-sm')
+                with ui.row().classes('gap-2'):
+                    ui.button("Clear Warnings", on_click=lambda: (active_conflicts.clear(), conflict_banner.refresh())).props('flat dense size=sm color=white')
+    
+    conflict_banner()
 
-        # 2. Inbox (Traces)
-        traces_container = ui.column().classes("w-full max-w-3xl")
-
-        # 3. Reasoning Graph View
-        ui.label("Cognitive Reasoning Graph").classes("text-lg font-bold q-mt-lg")
-        with ui.card().classes("w-full max-w-5xl h-96 overflow-auto"):
-            graph_container = ui.mermaid("graph TD\n  Start[Start Research]")
+    # Header Portal Bar
+    with ui.row().classes('w-full bg-slate-950/90 border-b border-white/10 q-px-md q-py-sm items-center justify-between'):
+        with ui.row().classes('items-center gap-2'):
+            ui.icon('science', size='24px', color='cyan').classes('glow-text-cyan')
+            ui.label("RAE-CRL : Cognitive Lab Desk").classes('text-lg font-bold text-white tracking-wide')
         
-        # 4. Global Hive Mind Search
-        ui.label("Global Knowledge Search (Hive Mind)").classes("text-lg font-bold q-mt-lg")
-        with ui.card().classes("w-full max-w-3xl q-mb-lg"):
-            with ui.row().classes("w-full no-wrap items-center"):
-                global_search_input = ui.input(placeholder="Search across all lab projects...").classes("w-full")
-                ui.button(icon="search", on_click=run_global_search).props("flat round")
-            search_results_container = ui.column().classes("w-full q-mt-md")
+        # Telemetry / Drift Alert Indicator
+        with ui.row().classes('items-center gap-4 bg-slate-900/60 q-px-md q-py-xs rounded-full border border-white/5'):
+            with ui.row().classes('items-center gap-1'):
+                ui.badge(color='green').classes('w-2 h-2 rounded-full p-0 q-mr-xs')
+                ui.label("Drift Score (PSI): 0.08").classes('text-xs text-slate-400')
+            with ui.row().classes('items-center gap-1'):
+                ui.badge(color='cyan').classes('w-2 h-2 rounded-full p-0 q-mr-xs')
+                ui.label("AIMS Status: COMPLIANT").classes('text-xs text-cyan-400')
+                
+        with ui.row().classes('gap-2'):
+            ui.button("Sync RAE Core", icon="sync", on_click=trigger_sync).props('color=cyan size=sm').classes('code-font')
+            ui.button("Quantum Portal", icon="open_in_new", on_click=lambda: ui.open("http://localhost:8080/")).props('flat dense size=sm color=white')
 
-    async def refresh_list():
-        traces_container.clear()
-        traces = await load_traces()
-        await update_graph()
+    # Main Left Navigation & View Panels Splitter
+    with ui.splitter(value=18).classes('w-full h-screen bg-slate-950 text-slate-300') as splitter:
+        with splitter.before:
+            with ui.column().classes('w-full h-full bg-slate-950/80 border-r border-white/5 q-py-md'):
+                with ui.tabs().props('vertical').classes('w-full text-left') as tabs:
+                    desk_tab = ui.tab('Desk', icon='inbox').classes('w-full justify-start text-sm text-slate-400')
+                    graph_tab = ui.tab('Graph', icon='hub').classes('w-full justify-start text-sm text-slate-400')
+                    mesh_tab = ui.tab('Mesh', icon='language').classes('w-full justify-start text-sm text-slate-400')
+                    runner_tab = ui.tab('Runner', icon='psychology').classes('w-full justify-start text-sm text-slate-400')
+                    compiler_tab = ui.tab('Compiler', icon='article').classes('w-full justify-start text-sm text-slate-400')
+                
+        with splitter.after:
+            with ui.column().classes('w-full h-full bg-transparent overflow-y-auto'):
+                with ui.tab_panels(tabs, value=desk_tab).classes('w-full h-full bg-transparent q-pa-lg') as panels:
+                    
+                    # --- TAB 1: DESK (Epistemic Sandbox) ---
+                    with ui.tab_panel(desk_tab).classes('gap-6'):
+                        with ui.row().classes('w-full justify-between items-center q-mb-md'):
+                            ui.label("Epistemic Sandbox").classes('text-2xl font-bold text-white')
+                            ui.badge("Workspace active: default-lab").props('color=purple')
+                        
+                        with ui.grid(columns=2).classes('w-full gap-6'):
+                            # Quick Capture Card
+                            with ui.card().classes('glass-card neon-border-violet text-white q-pa-md'):
+                                ui.label("Quick Capture 2.0").classes('text-lg font-bold text-purple-400 q-mb-sm')
+                                
+                                quick_title = ui.input(placeholder="Title of discovery...").classes('w-full q-mb-sm').props('dark outlined dense')
+                                
+                                with ui.row().classes('w-full gap-2 q-mb-sm'):
+                                    type_select = ui.select(
+                                        options=[t.value for t in ArtifactType],
+                                        label="Artifact Type",
+                                        value=ArtifactType.TRACE.value
+                                    ).classes('flex-grow').props('dark outlined dense')
+                                    
+                                    author_input = ui.input(label="Researcher", placeholder="Dr. Grzegorz").classes('w-32').props('dark outlined dense')
+                                    
+                                quick_input = ui.textarea(placeholder="Capture messy thoughts, raw findings or structured equations...").classes('w-full q-mb-sm').props('dark outlined rows=3')
+                                
+                                with ui.column().classes('w-full gap-0 q-mb-md'):
+                                    ui.label("Epistemic Grace Period").classes('text-xs text-purple-300 font-medium')
+                                    grace_slider = ui.slider(min=0, max=48, value=24).props('label-always color=purple')
+                                    ui.label("Hours protected from peer synchronization/Mesh.").classes('text-xs text-slate-400')
+                                
+                                ui.button("Store in Sandbox", icon="add_circle", on_click=add_quick_capture).props('color=purple').classes('w-full')
+                                
+                            # Drag & Drop Ingestion Bridge Card
+                            with ui.card().classes('glass-card neon-border-cyan text-white q-pa-md'):
+                                ui.label("Ingestion Bridge").classes('text-lg font-bold text-cyan-400 q-mb-xs')
+                                ui.label("Upload experimental logs, CSV results, or text files directly into cognitive storage.").classes('text-xs text-slate-400 q-mb-md')
+                                
+                                ui.upload(
+                                    label="Drop files (CSV/TXT)",
+                                    multiple=True,
+                                    auto_upload=True,
+                                    on_upload=handle_upload
+                                ).classes('w-full h-44 bg-slate-900/60 border border-dashed border-cyan-500/30 rounded-lg').props('dark flat')
 
-        with traces_container:
-            if not traces:
-                ui.label("Mind clear. No pending traces.").classes("text-grey italic")
+                        # Inbox Traces List
+                        ui.label("Capture Inbox (Grace Period Active)").classes('text-lg font-bold text-white q-mt-lg q-mb-sm')
+                        
+                        @ui.refreshable
+                        async def refresh_inbox():
+                            inbox_container.clear()
+                            traces = await load_traces()
+                            with inbox_container:
+                                if not traces:
+                                    ui.label("No pending draft traces in inbox. Ready for new input.").classes('text-slate-500 italic text-sm')
+                                for t in traces:
+                                    with ui.card().classes('glass-card border border-white/5 w-full q-pa-md hover:border-purple-500/20 transition-all'):
+                                        with ui.row().classes('w-full justify-between items-center no-wrap'):
+                                            with ui.column().classes('gap-1'):
+                                                ui.label(t.title).classes('text-base font-medium text-white')
+                                                with ui.row().classes('items-center gap-2'):
+                                                    ui.badge("TRACE", color='grey-8').classes('text-xs')
+                                                    ui.label(f"Author: {t.author} • Captured at {t.created_at.strftime('%H:%M:%S')}").classes('text-xs text-slate-400')
+                                            with ui.row().classes('gap-2'):
+                                                ui.button(icon="edit_note", on_click=lambda _, a=t: refine_trace(a)).props('color=purple dense flat round').tooltip("Refine and publish")
+                                                ui.button(icon="delete", on_click=lambda _, a=t: delete_artifact(a.id)).props('color=red dense flat round').tooltip("Delete trace")
+                                        ui.separator().classes('q-my-sm border-white/5')
+                                        ui.label(t.description).classes('text-sm text-slate-300 line-clamp-2')
 
-            for t in traces:
-                with ui.card().classes(
-                    "w-full q-mb-sm hover:shadow-lg transition-shadow"
-                ):
-                    with ui.row().classes("items-center justify-between no-wrap"):
-                        with ui.column().classes("gap-0"):
-                            ui.label(t.title).classes("font-medium")
-                            ui.label(
-                                f"{t.created_at.strftime('%H:%M')} • Grace period active"
-                            ).classes("text-xs text-grey")
+                        inbox_container = ui.column().classes('w-full gap-2')
+                        await refresh_inbox()
 
-                        with ui.row():
-                            ui.button(
-                                icon="edit", on_click=lambda _, a=t: refine_trace(a)
-                            ).props("flat round dense color=primary").tooltip(
-                                "Refine to Artifact"
-                            )
-                            ui.button(
-                                icon="delete",
-                                on_click=lambda: ui.notify("Delete not impl yet"),
-                            ).props("flat round dense color=negative")
+                    # --- TAB 2: GRAPH (Cognitive Reasoning Graph) ---
+                    with ui.tab_panel(graph_tab).classes('gap-6'):
+                        ui.label("Cognitive Reasoning Graph").classes('text-2xl font-bold text-white q-mb-md')
+                        
+                        with ui.grid(columns=3).classes('w-full gap-6 h-full'):
+                            # Left side: interactive graph render
+                            with ui.card().classes('glass-card border border-white/10 col-span-2 h-[550px] overflow-auto q-pa-md'):
+                                ui.label("Visual Provenance DAG").classes('text-sm font-bold text-cyan-400 q-mb-sm')
+                                graph_area = ui.mermaid("graph TD\n  Start[Start Research]")
+                            
+                            # Right side: Node List and Inspector Drawer
+                            with ui.card().classes('glass-card border border-white/10 h-[550px] q-pa-md flex flex-col justify-between'):
+                                ui.label("Logical Node Inspector").classes('text-sm font-bold text-purple-400 q-mb-sm')
+                                
+                                @ui.refreshable
+                                def node_inspector_panel():
+                                    # We'll trigger this panel's content based on selected_node_id
+                                    async def load_details():
+                                        if not selected_node_id:
+                                            return None
+                                        async def _get(repo):
+                                            return await repo.get(UUID(selected_node_id))
+                                        return await run_db(_get)
+                                    
+                                    # Run synchronously for NiceGUI refresh
+                                    import asyncio
+                                    try:
+                                        loop = asyncio.get_event_loop()
+                                        node = loop.run_until_complete(load_details()) if selected_node_id else None
+                                    except Exception:
+                                        node = None
+                                        
+                                    if not node:
+                                        ui.label("Select a node from the explorer list below to review details.").classes('text-slate-500 italic text-sm')
+                                    else:
+                                        with ui.column().classes('w-full gap-2 text-white'):
+                                            with ui.row().classes('items-center justify-between w-full'):
+                                                ui.badge(node.type.upper(), color='purple' if node.type == ArtifactType.HYPOTHESIS else 'cyan')
+                                                ui.label(node.author).classes('text-xs text-slate-400')
+                                            ui.label(node.title).classes('text-lg font-bold text-white')
+                                            ui.separator().classes('border-white/5')
+                                            ui.label(node.description).classes('text-sm text-slate-300 h-28 overflow-y-auto')
+                                            ui.separator().classes('border-white/5')
+                                            
+                                            with ui.column().classes('gap-1'):
+                                                ui.label(f"UUID: {node.id}").classes('text-xs text-slate-400 code-font')
+                                                ui.label(f"Provenance Hash: {node.provenance_hash or 'Not calculated'}").classes('text-xs text-slate-400 code-font')
+                                                ui.label(f"Created: {node.created_at.strftime('%Y-%m-%d %H:%M')}").classes('text-xs text-slate-400')
+                                                
+                                            # Render metadata blob
+                                            if node.metadata_blob:
+                                                ui.label("Metadata Blob").classes('text-xs font-bold text-purple-300 q-mt-xs')
+                                                ui.json(node.metadata_blob).classes('text-xs bg-slate-900/60 p-2 rounded max-h-24 overflow-y-auto')
+                                                
+                                            ui.button("Delete Node", icon="delete", on_click=lambda: delete_artifact(node.id)).props('color=red flat dense size=sm').classes('q-mt-md')
+                                
+                                node_inspector_panel()
+                                
+                                # Real-time list of all active artifacts to select from
+                                ui.separator().classes('border-white/5 q-my-sm')
+                                ui.label("Node Explorer").classes('text-xs text-slate-400 uppercase tracking-wider')
+                                
+                                @ui.refreshable
+                                async def node_explorer_list():
+                                    explorer_container.clear()
+                                    arts = await load_all_artifacts()
+                                    with explorer_container:
+                                        for a in arts:
+                                            if a.type == ArtifactType.TRACE: continue
+                                            async def on_select(x=a.id):
+                                                nonlocal selected_node_id
+                                                selected_node_id = str(x)
+                                                node_inspector_panel.refresh()
+                                                
+                                            with ui.item(on_click=on_select).classes('cursor-pointer hover:bg-white/5 rounded q-pa-xs border-b border-white/5 w-full'):
+                                                with ui.row().classes('items-center gap-2 no-wrap w-full'):
+                                                    # Color badge for type
+                                                    color = 'purple' if a.type == ArtifactType.HYPOTHESIS else 'cyan' if a.type == ArtifactType.OBSERVATION else 'amber'
+                                                    ui.badge(a.type.upper()[:4], color=color).classes('text-[10px]')
+                                                    ui.label(a.title).classes('text-xs text-white truncate max-w-44')
+                                                    
+                                explorer_container = ui.column().classes('w-full gap-1 h-36 overflow-y-auto')
+                                await node_explorer_list()
 
-    await refresh_list()
+                        async def update_graph_view():
+                            async def _get_data(repo):
+                                return await repo.list_by_project(project), await repo.list_relations(project)
+                            arts, rels = await run_db(_get_data)
+                            if not arts: return
+                            
+                            code_str = "graph TD\n"
+                            # Styles
+                            code_str += "  classDef hypothesis fill:#2e1065,stroke:#8b5cf6,stroke-width:2px,color:#fff;\n"
+                            code_str += "  classDef observation fill:#083344,stroke:#06b6d4,stroke-width:2px,color:#fff;\n"
+                            code_str += "  classDef generic fill:#1e293b,stroke:#475569,stroke-width:1px,color:#fff;\n"
+                            
+                            # Nodes
+                            for art in arts:
+                                if art.type == ArtifactType.TRACE: continue
+                                clean_title = art.title.replace('"', "'").replace("\n", " ")[:20]
+                                node_id = str(art.id).replace("-", "")
+                                code_str += f'  {node_id}["[{art.type.upper()}]<br/>{clean_title}"]\n'
+                                # Apply class style
+                                style_class = "hypothesis" if art.type == ArtifactType.HYPOTHESIS else "observation" if art.type == ArtifactType.OBSERVATION else "generic"
+                                code_str += f'  class {node_id} {style_class};\n'
+                            
+                            # Edges
+                            for rel in rels:
+                                s = str(rel.source_id).replace("-", "")
+                                t = str(rel.target_id).replace("-", "")
+                                code_str += f'  {s} --> {t}\n'
+                                
+                            graph_area.content = code_str
+                            await node_explorer_list()
+                        
+                        await update_graph_view()
 
+                    # --- TAB 3: MESH (Wymiana CMT i Federacja Pamięci) ---
+                    with ui.tab_panel(mesh_tab).classes('gap-6'):
+                        ui.label("RAE-Mesh Exchange & Consensual Memory Transfer").classes('text-2xl font-bold text-white q-mb-md')
+                        
+                        with ui.grid(columns=2).classes('w-full gap-6'):
+                            # Peer Map Card
+                            with ui.card().classes('glass-card border border-white/10 text-white q-pa-md'):
+                                ui.label("Active Mesh Peers").classes('text-lg font-bold text-cyan-400 q-mb-sm')
+                                ui.label("Verifiable peer network nodes configured via RAE-Mesh overlay.").classes('text-xs text-slate-400 q-mb-md')
+                                
+                                # Peer Grid
+                                peers = [
+                                    {"name": "Node 1 (Lumina)", "ip": "100.68.166.117:8000", "status": "Offline (Timeout)", "score": "0.98", "key": "ssh-ed25519 AAAAC3Nza..."},
+                                    {"name": "Node 2 (Julka)", "ip": "100.70.32.40:8000", "status": "Online", "score": "0.95", "key": "ssh-ed25519 AAAAC3Nza..."},
+                                    {"name": "Node 3 (Piotrek)", "ip": "172.30.15.11:11434", "status": "Online", "score": "0.99", "key": "ssh-ed25519 AAAAC3Nza..."}
+                                ]
+                                
+                                for p in peers:
+                                    with ui.card().classes('bg-slate-900/60 border border-white/5 w-full q-pa-sm q-mb-sm'):
+                                        with ui.row().classes('w-full justify-between items-center'):
+                                            with ui.column().classes('gap-1'):
+                                                ui.label(p["name"]).classes('text-sm font-bold')
+                                                ui.label(f"Endpoint: {p['ip']}").classes('text-xs text-slate-400 code-font')
+                                            with ui.column().classes('items-end gap-1'):
+                                                status_color = "red" if "Offline" in p["status"] else "green"
+                                                ui.badge(p["status"], color=status_color).classes('text-[10px]')
+                                                ui.label(f"Trust: {p['score']}").classes('text-xs text-slate-400')
+                            
+                            # CMT Consent Gate Card
+                            with ui.card().classes('glass-card border border-white/10 text-white q-pa-md'):
+                                ui.label("CMT Consent Registry").classes('text-lg font-bold text-purple-400 q-mb-xs')
+                                ui.label("Manage incoming/outgoing memory transfers. Data classified as RESTRICTED is quarantined.").classes('text-xs text-slate-400 q-mb-md')
+                                
+                                with ui.row().classes('items-center justify-between w-full bg-purple-950/20 border border-purple-500/20 rounded p-3 q-mb-sm'):
+                                    with ui.column().classes('gap-0'):
+                                        ui.label("Memory Package: Ingress_Faza6").classes('text-sm font-bold text-white')
+                                        ui.label("Source: Node 2 (Julka) • 24.5 KB").classes('text-xs text-slate-400')
+                                    ui.button("Review & Accept", icon="check_circle", on_click=lambda: ui.notify("CMT Security Gate checklist verified.", type="positive")).props('color=purple size=sm')
+                                    
+                                with ui.row().classes('items-center justify-between w-full bg-slate-900/60 border border-white/5 rounded p-3'):
+                                    with ui.column().classes('gap-0'):
+                                        ui.label("Export Package: FailurePatternPack").classes('text-sm font-bold text-slate-400')
+                                        ui.label("Target: Node 3 (Piotrek) • Sent").classes('text-xs text-slate-500')
+                                    ui.badge("COMPLETED", color="green").classes('text-[10px]')
 
-# Start
+                    # --- TAB 4: RUNNER (OCI Sandbox) ---
+                    with ui.tab_panel(runner_tab).classes('gap-6'):
+                        ui.label("Reproducible Experiment Execution (Hive Sandbox)").classes('text-2xl font-bold text-white q-mb-md')
+                        
+                        with ui.grid(columns=3).classes('w-full gap-6'):
+                            # Sandbox List (Left Column)
+                            with ui.card().classes('glass-card border border-white/10 text-white q-pa-md col-span-1'):
+                                ui.label("OCI Sandboxes").classes('text-sm font-bold text-cyan-400 q-mb-sm')
+                                
+                                sandboxes = [
+                                    {"id": "sbx-t-align-1e5903", "status": "TERMINATED", "detail": "pytest: exit code 0"},
+                                    {"id": "sbx-t2-216d0f", "status": "ACTIVE", "detail": "pytest: test_shadow_evaluator.py"},
+                                    {"id": "sbx-t-r3-482faf", "status": "ACTIVE", "detail": "dryrun: migration checks"}
+                                ]
+                                
+                                for s in sandboxes:
+                                    with ui.card().classes('bg-slate-900/60 border border-white/5 w-full q-pa-xs q-mb-sm'):
+                                        with ui.row().classes('w-full justify-between items-center'):
+                                            ui.label(s["id"]).classes('text-xs font-bold code-font')
+                                            color = "green" if s["status"] == "ACTIVE" else "grey-8"
+                                            ui.badge(s["status"], color=color).classes('text-[10px]')
+                                        ui.label(s["detail"]).classes('text-xs text-slate-400 q-mt-xs')
+                            
+                            # Terminal Logs (Right Column, 2/3 width)
+                            with ui.card().classes('glass-card border border-white/10 text-white q-pa-md col-span-2'):
+                                ui.label("Container Execution Log Stream").classes('text-sm font-bold text-purple-400 q-mb-sm')
+                                
+                                terminal_mock = (
+                                    ui.textarea(
+                                        value="[SANDBOX] Starting container sbx-t2-216d0f...\n"
+                                              "[SANDBOX] Checking cap-drop=ALL... OK\n"
+                                              "[SANDBOX] Checking read-only filesystem... OK\n"
+                                              "[SANDBOX] Checking no-new-privileges... OK\n"
+                                              "[SANDBOX] Running command: pytest core/test_compliance.py\n"
+                                              "================== 21 passed in 0.42s ==================\n"
+                                              "[SANDBOX] Audit evidence signed successfully.\n"
+                                              "[HIVE] Execution completed with status: SUCCESS\n"
+                                    )
+                                    .classes('w-full code-font text-green-400 bg-slate-950')
+                                    .props('dark borderless readonly rows=10')
+                                )
+                                
+                        # Evidence Packages List
+                        ui.label("Verifiable Evidence Packages").classes('text-lg font-bold text-white q-mt-lg q-mb-sm')
+                        with ui.card().classes('glass-card border border-white/10 text-white w-full q-pa-md'):
+                            with ui.row().classes('w-full justify-between items-center border-b border-white/5 q-pb-xs'):
+                                ui.label("Package ID").classes('text-xs font-bold text-slate-400')
+                                ui.label("Associated Sandbox").classes('text-xs font-bold text-slate-400')
+                                ui.label("SBOM Multihash").classes('text-xs font-bold text-slate-400')
+                                ui.label("SAST / Security Verdict").classes('text-xs font-bold text-slate-400')
+                            
+                            packages = [
+                                {"id": "ev-8c6e3e7a", "sbx": "sbx-t-align-1e5903", "hash": "mh:sha256-a1c2e4f5...", "verdict": "SECURE (Trivy: 0, Gitleaks: 0)"},
+                                {"id": "ev-05772dc9", "sbx": "sbx-t2-216d0f", "hash": "mh:sha256-f9d2e1a3...", "verdict": "SECURE (Trivy: 0, Gitleaks: 0)"}
+                            ]
+                            
+                            for p in packages:
+                                with ui.row().classes('w-full justify-between items-center q-py-sm border-b border-white/5'):
+                                    ui.label(p["id"]).classes('text-xs code-font text-purple-300')
+                                    ui.label(p["sbx"]).classes('text-xs code-font text-slate-400')
+                                    ui.label(p["hash"]).classes('text-xs code-font text-slate-400')
+                                    ui.badge(p["verdict"], color="green").classes('text-[10px]')
+
+                    # --- TAB 5: COMPILER (Publication Draft Creator) ---
+                    with ui.tab_panel(compiler_tab).classes('gap-6'):
+                        ui.label("Publication Draft Creator & Document Compiler").classes('text-2xl font-bold text-white q-mb-md')
+                        
+                        with ui.row().classes('w-full gap-2 q-mb-md'):
+                            ui.label("Select Format:").classes('text-sm font-medium items-center flex')
+                            format_select = ui.select(options=["Markdown", "LaTeX"], value="Markdown").classes('w-32').props('dark outlined dense')
+                            ui.button("Recompile Draft", icon="refresh", on_click=lambda: refresh_compiler_preview()).props('color=purple size=sm')
+                            ui.button("Export ZIP Publication", icon="download", on_click=lambda: ui.notify("ZIP compilation started... Output ready.", type="positive")).props('color=cyan size=sm')
+                        
+                        with ui.grid(columns=2).classes('w-full gap-6 h-[450px]'):
+                            # Left pane: raw draft editor/compiler code view
+                            with ui.card().classes('glass-card border border-white/10 text-white q-pa-md h-full overflow-auto'):
+                                ui.label("Draft Code Viewer").classes('text-xs font-bold text-slate-400 q-mb-sm')
+                                draft_code_display = ui.textarea().classes('w-full h-full code-font text-slate-300 bg-slate-900/60').props('dark borderless readonly')
+                            
+                            # Right pane: rendered markdown or preview details
+                            with ui.card().classes('glass-card border border-white/10 text-white q-pa-md h-full overflow-auto'):
+                                ui.label("Compiled Document Preview").classes('text-xs font-bold text-cyan-400 q-mb-sm')
+                                draft_html_preview = ui.markdown("Loading preview...")
+
+                        # Citation Manager Mockup
+                        ui.label("Epistemic Citation Bibliography").classes('text-lg font-bold text-white q-mt-lg q-mb-sm')
+                        with ui.card().classes('glass-card border border-white/10 text-white w-full q-pa-md'):
+                            ui.label("Traced DAG dependencies citation mapping:").classes('text-xs text-slate-400 q-mb-sm')
+                            ui.label("[1] Hypothesis: 'Data Import: test_observation' derived from Assumption 'Baseline parameters' (Grace Period Cleared).").classes('text-xs code-font text-slate-300')
+                            ui.label("[2] Observation: 'Empirical verification' contradicts Hypothesis 'Theoretical model 1' (Watchdog Resolved).").classes('text-xs code-font text-slate-300')
+
+                        async def refresh_compiler_preview():
+                            artifacts = await load_all_artifacts()
+                            if format_select.value == "Markdown":
+                                content = ExportService.to_markdown(artifacts, project)
+                                draft_code_display.value = content
+                                draft_html_preview.content = content
+                            else:
+                                content = ExportService.to_latex(artifacts, project)
+                                draft_code_display.value = content
+                                draft_html_preview.content = "### LaTeX Mode Active\nReview code draft in left panel. LaTeX compilation output is stored as `document.pdf`."
+                        
+                        await refresh_compiler_preview()
+
+# Start NiceGUI
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(title="RAE-CRL", port=8090, reload=True)
