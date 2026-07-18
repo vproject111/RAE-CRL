@@ -26,7 +26,7 @@ services:
     image: rae-crl:dev
     container_name: rae-crl-ui-dev
     ports:
-      - "8503:8080"
+      - "8503:8090"
     volumes:
       - .:/app
     environment:
